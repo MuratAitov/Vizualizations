@@ -1,6 +1,7 @@
 import streamlit as st
 
 from hw2.showing_data import render_hw2
+from hw3.hypercube import render_hw3
 
 st.set_page_config(
     page_title="CPSC 481 Data Analysis and Communication",
@@ -51,8 +52,22 @@ st.markdown(
 if st.button("Open Showing Data", use_container_width=True):
     st.session_state.selected_hw = "Showing Data"
 
+st.markdown(
+    """
+    <div class="hw-card">
+        <div class="hw-title">Interactive Hypercube</div>
+        <p class="hw-sub">HW 3</p>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+if st.button("Open Interactive Hypercube", use_container_width=True):
+    st.session_state.selected_hw = "Interactive Hypercube"
+
 st.divider()
 
 selected_hw = st.session_state.selected_hw
 if selected_hw == "Showing Data":
     render_hw2()
+elif selected_hw == "Interactive Hypercube":
+    render_hw3()
