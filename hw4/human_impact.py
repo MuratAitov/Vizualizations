@@ -200,7 +200,7 @@ def render_hw4() -> None:
         "Play an animated sequence where each country appears and the bar grows to show cumulative human impact."
     )
 
-    c1, c2, c3 = st.columns([1.6, 1, 1])
+    c1, c2 = st.columns([1.5, 1])
     with c1:
         metric_focus = st.selectbox(
             "Focus metric",
@@ -217,56 +217,13 @@ def render_hw4() -> None:
             step=1,
             key="cinematic_n",
         )
-    with c3:
-        step_ms = st.slider(
-            "Base step (ms)",
-            min_value=250,
-            max_value=3000,
-            value=900,
-            step=50,
-            key="step_ms",
-        )
 
-    c4, c5, c6 = st.columns([1.25, 1, 1])
-    with c4:
-        narrative_mode = st.radio(
-            "Narrative mode",
-            options=[
-                "Absolute deaths",
-                "Deaths per 100k people",
-                "% of 1939 population",
-            ],
-            horizontal=False,
-            key="narrative_mode",
-        )
-    with c5:
-        memorial_mode = st.checkbox("Memorial mode", value=True, key="memorial_mode")
-    with c6:
-        pace_multiplier = st.slider(
-            "Pace multiplier",
-            min_value=0.25,
-            max_value=2.0,
-            value=1.0,
-            step=0.05,
-            key="pace_multiplier",
-        )
-        city_unit = st.slider(
-            "City size for equivalence",
-            min_value=100000,
-            max_value=2000000,
-            value=500000,
-            step=50000,
-            key="city_unit",
-        )
-        realtime_sec_per_100k = st.slider(
-            "Real-time seconds per 100k deaths",
-            min_value=0.0,
-            max_value=2.0,
-            value=0.0,
-            step=0.05,
-            key="realtime_sec_per_100k",
-            help="0 disables death-based slowdown.",
-        )
+    step_ms = 1200
+    narrative_mode = "Absolute deaths"
+    memorial_mode = True
+    pace_multiplier = 1.0
+    city_unit = 500000
+    realtime_sec_per_100k = 0.0
 
     focus_map = {
         "Total impact": ("total", "Total impact"),
@@ -496,6 +453,61 @@ def _build_cinematic_html(
         stroke: rgba(255, 255, 255, 0.28);
         stroke-width: 2;
       }}
+      .memorial-overlay {{
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        pointer-events: none;
+        z-index: 999;
+        transition: background 3s ease;
+      }}
+      .memorial-overlay.active {{
+        background: rgba(0, 0, 0, 0.85);
+        pointer-events: auto;
+      }}
+      .memorial-label {{
+        font-size: 14px;
+        color: #94a3b8;
+        letter-spacing: 3px;
+        text-transform: uppercase;
+        opacity: 0;
+        transition: opacity 2s ease 0.8s;
+      }}
+      .memorial-overlay.active .memorial-label {{
+        opacity: 1;
+      }}
+      .memorial-total {{
+        font-size: 56px;
+        font-weight: 800;
+        color: #fca5a5;
+        opacity: 0;
+        transform: translateY(20px);
+        transition: opacity 2.5s ease 1.5s, transform 2.5s ease 1.5s;
+        text-align: center;
+        margin-top: 8px;
+      }}
+      .memorial-overlay.active .memorial-total {{
+        opacity: 1;
+        transform: translateY(0);
+      }}
+      .memorial-quote {{
+        font-size: 15px;
+        color: #cbd5e1;
+        font-style: italic;
+        margin-top: 32px;
+        max-width: 480px;
+        text-align: center;
+        line-height: 1.6;
+        opacity: 0;
+        transition: opacity 2.5s ease 3.5s;
+      }}
+      .memorial-overlay.active .memorial-quote {{
+        opacity: 1;
+      }}
     </style>
   </head>
   <body>
@@ -545,6 +557,11 @@ def _build_cinematic_html(
         </div>
       </div>
     </div>
+    <div class="memorial-overlay" id="memorialOverlay">
+      <div class="memorial-label">Estimated total deaths</div>
+      <div class="memorial-total" id="memorialTotal"></div>
+      <div class="memorial-quote">"Every number was a life. Every life was a world."</div>
+    </div>
     <script>
       const allData = {data_json};
       const metricTitle = {title_json};
@@ -554,12 +571,12 @@ def _build_cinematic_html(
       const cityUnit = {city_unit_json};
       const realtimeSecPer100k = {realtime_pace_json};
       const stepMs = {int(step_ms)};
-      const totalAnim = Math.max(160, Math.floor(stepMs * 0.78));
-      const repositionAnim = Math.max(90, Math.floor(totalAnim * 0.34));
-      const growAnim = Math.max(70, totalAnim - repositionAnim);
-      const militaryAnim = Math.max(50, Math.floor(growAnim * 0.55));
-      const civilianAnim = Math.max(40, growAnim - militaryAnim);
-      const minStepGap = totalAnim + 40;
+      const totalAnim = Math.max(300, Math.floor(stepMs * 0.9));
+      const repositionAnim = Math.max(180, Math.floor(totalAnim * 0.35));
+      const growAnim = Math.max(120, totalAnim - repositionAnim);
+      const militaryAnim = Math.max(80, Math.floor(growAnim * 0.55));
+      const civilianAnim = Math.max(60, growAnim - militaryAnim);
+      const minStepGap = totalAnim + 60;
 
       if (memorialMode) document.body.classList.add("memorial");
 
@@ -645,6 +662,12 @@ def _build_cinematic_html(
       let timer = null;
       let isPlaying = false;
       let lastPickedCityName = "";
+      let prevCumTotal = 0, prevCumMilitary = 0, prevCumCivilian = 0;
+
+      const maxMilitaryAll = d3.max(allData, d => d.military_scaled || 0) || 1;
+      const maxCivilianAll = d3.max(allData, d => d.civilian_scaled || 0) || 1;
+      const militaryColor = d3.scaleLinear().domain([0, maxMilitaryAll]).range(["#fdba74", "#b91c1c"]).clamp(true);
+      const civilianColor = d3.scaleLinear().domain([0, maxCivilianAll]).range(["#93c5fd", "#4338ca"]).clamp(true);
 
       function fmtMode(value) {{
         if (narrativeMode === "Absolute deaths") return d3.format(",.0f")(value);
@@ -691,9 +714,24 @@ def _build_cinematic_html(
         const militaryScaledSum = d3.sum(visible, d => d.military_scaled || 0);
         const civilianScaledSum = d3.sum(visible, d => d.civilian_scaled || 0);
         const totalAbsSum = d3.sum(visible, d => d.total_avg || 0);
-        cumulativeEl.textContent = fmtMode(totalScaledSum);
-        cumulativeMilitaryEl.textContent = fmtMode(militaryScaledSum);
-        cumulativeCivilianEl.textContent = fmtMode(civilianScaledSum);
+        d3.select(cumulativeEl).transition().duration(totalAnim)
+          .tween("text", function() {{
+            const i = d3.interpolateNumber(prevCumTotal, totalScaledSum);
+            return function(t) {{ this.textContent = fmtMode(i(t)); }};
+          }});
+        d3.select(cumulativeMilitaryEl).transition().duration(totalAnim)
+          .tween("text", function() {{
+            const i = d3.interpolateNumber(prevCumMilitary, militaryScaledSum);
+            return function(t) {{ this.textContent = fmtMode(i(t)); }};
+          }});
+        d3.select(cumulativeCivilianEl).transition().duration(totalAnim)
+          .tween("text", function() {{
+            const i = d3.interpolateNumber(prevCumCivilian, civilianScaledSum);
+            return function(t) {{ this.textContent = fmtMode(i(t)); }};
+          }});
+        prevCumTotal = totalScaledSum;
+        prevCumMilitary = militaryScaledSum;
+        prevCumCivilian = civilianScaledSum;
         if (lastItem) {{
           const lossPct = lastItem.pop_1939 ? (100 * (lastItem.total_avg || 0) / lastItem.pop_1939) : null;
           const survivedPct = lossPct !== null ? Math.max(0, 100 - lossPct) : null;
@@ -720,11 +758,13 @@ def _build_cinematic_html(
 
         xAxis
           .transition()
+          .ease(d3.easeCubicOut)
           .duration(repositionAnim)
           .call(d3.axisBottom(x).ticks(6).tickFormat(d3.format(",")));
 
         yAxis
           .transition()
+          .ease(d3.easeCubicOut)
           .duration(repositionAnim)
           .call(d3.axisLeft(y));
 
@@ -761,10 +801,11 @@ def _build_cinematic_html(
           .attr("height", y.bandwidth())
           .attr("width", 0)
           .attr("rx", 5)
-          .attr("fill", "#f97316")
+          .attr("fill", d => militaryColor(d.military_scaled || 0))
           .attr("opacity", 0.92)
           .merge(militaryBars)
           .transition()
+          .ease(d3.easeCubicOut)
           .delay(d => (lastItem && d.country === lastItem.country ? repositionAnim : 0))
           .duration(d => (lastItem && d.country === lastItem.country ? militaryAnim : repositionAnim))
           .attr("y", d => y(d.country))
@@ -780,10 +821,11 @@ def _build_cinematic_html(
           .attr("y", d => y(d.country))
           .attr("height", y.bandwidth())
           .attr("width", 0)
-          .attr("fill", "#38bdf8")
+          .attr("fill", d => civilianColor(d.civilian_scaled || 0))
           .attr("opacity", 0.9)
           .merge(civilianBars)
           .transition()
+          .ease(d3.easeCubicOut)
           .delay(d => (
             lastItem && d.country === lastItem.country
               ? repositionAnim + militaryAnim
@@ -809,6 +851,7 @@ def _build_cinematic_html(
           .text("")
           .merge(labels)
           .transition()
+          .ease(d3.easeCubicOut)
           .delay(d => (
             lastItem && d.country === lastItem.country
               ? repositionAnim + militaryAnim + Math.floor(civilianAnim * 0.4)
@@ -850,6 +893,7 @@ def _build_cinematic_html(
         const last = step();
         if (!last) {{
           isPlaying = false;
+          showMemorial();
           return;
         }}
         timer = window.setTimeout(loop, computeDelay(last));
@@ -868,11 +912,24 @@ def _build_cinematic_html(
         timer = null;
       }}
 
+      function showMemorial() {{
+        const totalAbsSum = d3.sum(allData, d => d.total_avg || 0);
+        const overlay = document.getElementById("memorialOverlay");
+        document.getElementById("memorialTotal").textContent = d3.format(",.0f")(totalAbsSum);
+        setTimeout(() => overlay.classList.add("active"), 600);
+      }}
+
+      function hideMemorial() {{
+        document.getElementById("memorialOverlay").classList.remove("active");
+      }}
+
       function restart() {{
         pause();
+        hideMemorial();
         visible = [];
         idx = 0;
         lastPickedCityName = "";
+        prevCumTotal = 0; prevCumMilitary = 0; prevCumCivilian = 0;
         render();
       }}
 
