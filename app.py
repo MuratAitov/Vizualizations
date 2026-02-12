@@ -2,6 +2,7 @@ import streamlit as st
 
 from hw2.showing_data import render_hw2
 from hw3.hypercube import render_hw3
+from hw4.human_impact import render_hw4
 
 st.set_page_config(
     page_title="CPSC 481 Data Analysis and Communication",
@@ -64,6 +65,18 @@ st.markdown(
 if st.button("Open Interactive Hypercube", use_container_width=True):
     st.session_state.selected_hw = "Interactive Hypercube"
 
+st.markdown(
+    """
+    <div class="hw-card">
+        <div class="hw-title">Human Impact: WWII Deaths</div>
+        <p class="hw-sub">HW 4</p>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+if st.button("Open Human Impact", use_container_width=True):
+    st.session_state.selected_hw = "Human Impact"
+
 st.divider()
 
 selected_hw = st.session_state.selected_hw
@@ -71,3 +84,5 @@ if selected_hw == "Showing Data":
     render_hw2()
 elif selected_hw == "Interactive Hypercube":
     render_hw3()
+elif selected_hw == "Human Impact":
+    render_hw4()
