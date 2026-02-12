@@ -200,7 +200,7 @@ def render_hw4() -> None:
         "Play an animated sequence where each country appears and the bar grows to show cumulative human impact."
     )
 
-    c1, c2 = st.columns([1.5, 1])
+    c1, c2, c3, c4 = st.columns([1.4, 1, 0.8, 1])
     with c1:
         metric_focus = st.selectbox(
             "Focus metric",
@@ -217,9 +217,19 @@ def render_hw4() -> None:
             step=1,
             key="cinematic_n",
         )
+    with c3:
+        pct_mode = st.checkbox("% of population", value=False, key="pct_mode")
+    with c4:
+        step_ms = st.slider(
+            "Speed (ms per step)",
+            min_value=400,
+            max_value=3000,
+            value=1200,
+            step=100,
+            key="step_ms",
+        )
 
-    step_ms = 1200
-    narrative_mode = "Absolute deaths"
+    narrative_mode = "% of 1939 population" if pct_mode else "Absolute deaths"
     memorial_mode = True
     pace_multiplier = 1.0
     city_unit = 500000
@@ -319,7 +329,7 @@ def render_hw4() -> None:
             city_unit=city_unit,
             realtime_sec_per_100k=realtime_sec_per_100k,
         ),
-        height=700,
+        height=920,
     )
 
 
@@ -523,6 +533,15 @@ def _build_cinematic_html(
           <button id="restartBtn">Restart</button>
         </div>
       </div>
+      <div style="margin-bottom:10px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+          <span style="font-size:11px;color:#94a3b8;letter-spacing:0.5px;">Deaths over time &mdash; each dot &asymp; 100,000 lives</span>
+          <span id="particleCount" style="font-size:11px;color:#fca5a5;"></span>
+        </div>
+        <svg id="particleBar" width="100%" height="90" viewBox="0 0 980 90"
+             style="background:rgba(15,23,42,0.4);border-radius:8px;border:1px solid rgba(148,163,184,0.15);overflow:hidden;">
+        </svg>
+      </div>
       <div class="panel">
         <div class="chart-card">
           <svg id="chart" width="100%" height="600" viewBox="0 0 980 600"></svg>
@@ -657,6 +676,54 @@ def _build_cinematic_html(
       const civilianLayer = g.append("g");
       const labelsLayer = g.append("g");
 
+      const particleSvg = d3.select("#particleBar");
+      const particleCountEl = document.getElementById("particleCount");
+      const DEATHS_PER_DOT = 100000;
+      const dotColors = ["#fca5a5", "#f87171", "#ef4444"];
+      const tMargin = {{ left: 40, right: 10 }};
+      const tInnerW = 980 - tMargin.left - tMargin.right;
+      const tParticleH = 66;
+      const timeScale = d3.scaleLinear().domain([0, 72]).range([tMargin.left, tMargin.left + tInnerW]);
+
+      const tAxisG = particleSvg.append("g");
+      const yearTicks = [
+        {{ m: 0, label: "1939" }}, {{ m: 4, label: "1940" }},
+        {{ m: 16, label: "1941" }}, {{ m: 28, label: "1942" }},
+        {{ m: 40, label: "1943" }}, {{ m: 52, label: "1944" }},
+        {{ m: 64, label: "1945" }},
+      ];
+      yearTicks.forEach(t => {{
+        const tx = timeScale(t.m);
+        tAxisG.append("line")
+          .attr("x1", tx).attr("x2", tx)
+          .attr("y1", 0).attr("y2", tParticleH)
+          .attr("stroke", "rgba(148,163,184,0.15)").attr("stroke-width", 1);
+        tAxisG.append("text")
+          .attr("x", tx).attr("y", tParticleH + 15)
+          .attr("text-anchor", "middle")
+          .attr("fill", "#94a3b8").attr("font-size", "10px")
+          .text(t.label);
+      }});
+
+      const particleG = particleSvg.append("g");
+
+      const countryTimeRange = {{
+        "Albania": [0, 62], "Australia": [27, 71], "Austria": [0, 68],
+        "Belgium": [8, 68], "Brazil": [33, 68], "Bulgaria": [12, 68],
+        "Canada": [0, 71], "China": [0, 71], "Czechoslovakia": [0, 68],
+        "Denmark": [7, 68], "Dutch East Indies": [27, 71], "Estonia": [21, 68],
+        "Ethiopia": [0, 24], "Finland": [3, 56], "France": [8, 68],
+        "French Indochina": [15, 71], "Germany": [0, 68], "Greece": [13, 68],
+        "Hungary": [12, 68], "India": [0, 71], "Italy": [0, 68],
+        "Japan": [0, 71], "Korea": [0, 71], "Latvia": [21, 68],
+        "Lithuania": [21, 68], "Luxembourg": [8, 68], "Malaya": [27, 71],
+        "Netherlands": [8, 68], "New Zealand": [0, 71], "Norway": [7, 68],
+        "Papua New Guinea": [27, 71], "Philippines": [27, 71], "Poland": [0, 68],
+        "Romania": [12, 68], "Singapore": [27, 68], "South Africa": [0, 68],
+        "Soviet Union": [21, 68], "United Kingdom": [0, 68],
+        "United States": [27, 71], "Yugoslavia": [12, 68],
+      }};
+
       let visible = [];
       let idx = 0;
       let timer = null;
@@ -707,6 +774,34 @@ def _build_cinematic_html(
         const deaths = lastItem.total_avg || 0;
         const realtimeDelay = (deaths / 100000.0) * realtimeSecPer100k * 1000;
         return Math.max(baseDelay, realtimeDelay);
+      }}
+
+      function spawnParticles(country, deaths) {{
+        const count = Math.round(deaths / DEATHS_PER_DOT);
+        if (count <= 0) return;
+        const range = countryTimeRange[country] || [0, 72];
+        const mStart = range[0];
+        const mEnd = range[1];
+        for (let i = 0; i < count; i++) {{
+          const month = mStart + Math.random() * (mEnd - mStart);
+          const px = timeScale(month);
+          const landY = 4 + Math.random() * (tParticleH - 8);
+          const color = dotColors[Math.floor(Math.random() * dotColors.length)];
+          particleG.append("circle")
+            .attr("cx", px)
+            .attr("cy", -6)
+            .attr("r", 1.4 + Math.random() * 1.1)
+            .attr("fill", color)
+            .attr("opacity", 0)
+            .transition()
+            .delay(i * 12 + Math.random() * 300)
+            .duration(500 + Math.random() * 500)
+            .ease(d3.easeCubicIn)
+            .attr("cy", landY)
+            .attr("opacity", 0.4 + Math.random() * 0.4);
+        }}
+        const cumSum = d3.sum(visible, d => d.total_avg || 0);
+        particleCountEl.textContent = `~${{d3.format(",.0f")(cumSum)}} lives`;
       }}
 
       function updateSidePanel(lastItem) {{
@@ -885,6 +980,7 @@ def _build_cinematic_html(
         const last = allData[idx];
         idx += 1;
         render(last);
+        spawnParticles(last.country, last.total_avg || 0);
         return last;
       }}
 
@@ -926,6 +1022,8 @@ def _build_cinematic_html(
       function restart() {{
         pause();
         hideMemorial();
+        particleG.selectAll("*").remove();
+        particleCountEl.textContent = "";
         visible = [];
         idx = 0;
         lastPickedCityName = "";
